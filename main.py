@@ -1,25 +1,37 @@
 # ============================================================
 # QUICKCART STOCKOUT RISK PREDICTION
-# END-TO-END ML PROJECT
 # ============================================================
 #
-# Project:
-# Predicting Stockout Risk for a Quick-Commerce Operator
+# BUSINESS PROBLEM
+# ----------------
+# Predict whether a SKU in a particular store on a particular
+# day is:
 #
-# Target:
-# Safe / At-Risk / Imminent
+#       Safe
+#       At-Risk
+#       Imminent
 #
-# Dataset:
-# 12 Stores × 60 SKUs × 30 Days = 21,600 records
+# PROJECT TYPE
+# ------------
+# Supervised Multi-Class Classification
 #
-# Models:
+# DATASET
+# -------
+# 12 Stores
+# 60 SKUs
+# 15 Suppliers
+# 30 Days
+# 21,600 Inventory Records
+#
+# MODELS
+# ------
 # 1. Majority Classifier
 # 2. Multinomial Logistic Regression
 # 3. Random Forest
 #
-# Train/Test:
-# Train = 2026-10-01 to 2026-10-23
-# Test  = 2026-10-24 to 2026-10-30
+# MAIN METRIC
+# -----------
+# Imminent Recall
 #
 # ============================================================
 
@@ -28,21 +40,27 @@
 # 1. IMPORT LIBRARIES
 # ============================================================
 
-import warnings
-warnings.filterwarnings("ignore")
-
-import numpy as np
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 
+from sklearn.model_selection import train_test_split
+
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import OneHotEncoder, StandardScaler
+
+from sklearn.preprocessing import (
+    OneHotEncoder,
+    StandardScaler
+)
+
 from sklearn.impute import SimpleImputer
 
 from sklearn.dummy import DummyClassifier
+
 from sklearn.linear_model import LogisticRegression
+
 from sklearn.ensemble import RandomForestClassifier
 
 from sklearn.metrics import (
@@ -55,57 +73,38 @@ from sklearn.metrics import (
     ConfusionMatrixDisplay
 )
 
-from sklearn.utils.multiclass import unique_labels
+
+# ============================================================
+# 2. PROJECT CONFIGURATION
+# ============================================================
+
+# Change this path according to your folder structure.
+
+DATA_PATH = r"C:\Users\omkars\Desktop\data science\QuickCart Warehouse Inventory Stockout Risk Predictor"
+
+STORES_FILE = f"{DATA_PATH}/dim_stores.csv"
+SKUS_FILE = f"{DATA_PATH}/dim_skus.csv"
+SUPPLIERS_FILE = f"{DATA_PATH}/dim_suppliers.csv"
+EVENTS_FILE = f"{DATA_PATH}/dim_events.csv"
+INVENTORY_FILE = f"{DATA_PATH}/fact_inventory_daily.csv"
 
 
 # ============================================================
-# 2. SETTINGS
-# ============================================================
-
-RANDOM_STATE = 42
-
-TRAIN_END = pd.Timestamp("2026-10-23")
-TEST_START = pd.Timestamp("2026-10-24")
-
-FESTIVAL_START = pd.Timestamp("2026-10-22")
-FESTIVAL_END = pd.Timestamp("2026-10-26")
-
-
-# ============================================================
-# 3. FILE PATHS
+# 3. LOAD THE FIVE TABLES
 # ============================================================
 #
-# Change these paths according to your folder structure.
+# The project contains:
 #
-# Example:
+# dim_stores
+# dim_skus
+# dim_suppliers
+# dim_events
+# fact_inventory_daily
 #
-# project/
-#     quickcart_project.py
-#     data/
-#         dim_stores.csv
-#         dim_skus.csv
-#         dim_suppliers.csv
-#         dim_events.csv
-#         fact_inventory_daily.csv
+# The fact table is the main table.
+# The other tables provide additional information.
 #
 # ============================================================
-
-DATA_DIR = "data"
-
-STORES_FILE = f"{DATA_DIR}/dim_stores.csv"
-SKUS_FILE = f"{DATA_DIR}/dim_skus.csv"
-SUPPLIERS_FILE = f"{DATA_DIR}/dim_suppliers.csv"
-EVENTS_FILE = f"{DATA_DIR}/dim_events.csv"
-FACT_FILE = f"{DATA_DIR}/fact_inventory_daily.csv"
-
-
-# ============================================================
-# 4. LOAD THE FIVE TABLES
-# ============================================================
-
-print("=" * 70)
-print("LOADING DATA")
-print("=" * 70)
 
 stores = pd.read_csv(
     STORES_FILE,
@@ -131,46 +130,60 @@ events = pd.read_csv(
     keep_default_na=True
 )
 
-fact = pd.read_csv(
-    FACT_FILE,
+inventory = pd.read_csv(
+    INVENTORY_FILE,
     na_values=["N/A", "missing", "--", "NA", "null"],
     keep_default_na=True
 )
+
+
+print("\n================ DATA LOADED ================\n")
 
 print("Stores:", stores.shape)
 print("SKUs:", skus.shape)
 print("Suppliers:", suppliers.shape)
 print("Events:", events.shape)
-print("Fact:", fact.shape)
+print("Inventory:", inventory.shape)
 
 
 # ============================================================
-# 5. DATASET SANITY CHECKS
+# 4. BASIC DATA VALIDATION
+# ============================================================
+#
+# Expected:
+#
+# Stores       = 12
+# SKUs         = 60
+# Suppliers    = 15
+# Events       = 30
+# Inventory    = 21,600
+#
 # ============================================================
 
-print("\n" + "=" * 70)
-print("DATASET SANITY CHECKS")
-print("=" * 70)
+print("\n================ EXPECTED ROW COUNTS ================\n")
 
-assert len(stores) == 12, "Stores row count mismatch"
-assert len(skus) == 60, "SKU row count mismatch"
-assert len(suppliers) == 15, "Supplier row count mismatch"
-assert len(events) == 30, "Event row count mismatch"
-assert len(fact) == 21600, "Fact row count mismatch"
+print("Stores expected:", 12)
+print("Stores actual  :", len(stores))
 
-print("✓ Stores = 12")
-print("✓ SKUs = 60")
-print("✓ Suppliers = 15")
-print("✓ Events = 30")
-print("✓ Fact rows = 21,600")
+print("SKUs expected:", 60)
+print("SKUs actual  :", len(skus))
+
+print("Suppliers expected:", 15)
+print("Suppliers actual  :", len(suppliers))
+
+print("Events expected:", 30)
+print("Events actual  :", len(events))
+
+print("Inventory expected:", 21600)
+print("Inventory actual  :", len(inventory))
 
 
 # ============================================================
-# 6. DATE CONVERSION
+# 5. CHECK DATE COLUMN
 # ============================================================
 
-fact["date"] = pd.to_datetime(
-    fact["date"],
+inventory["date"] = pd.to_datetime(
+    inventory["date"],
     errors="coerce"
 )
 
@@ -179,187 +192,148 @@ events["date"] = pd.to_datetime(
     errors="coerce"
 )
 
-print("\nFact date range:")
-print(fact["date"].min(), "to", fact["date"].max())
+print("\nDate range:")
+print(inventory["date"].min())
+print(inventory["date"].max())
 
-print("Unique dates:", fact["date"].nunique())
+print("\nUnique dates:")
+print(inventory["date"].nunique())
 
 
 # ============================================================
-# 7. CHECK TARGET DISTRIBUTION
+# 6. CHECK TARGET DISTRIBUTION
 # ============================================================
 
-print("\n" + "=" * 70)
-print("TARGET DISTRIBUTION")
-print("=" * 70)
+print("\n================ TARGET DISTRIBUTION ================\n")
 
-target_counts = fact["stockout_risk"].value_counts()
+target_counts = inventory["stockout_risk"].value_counts()
+
+print(target_counts)
 
 target_percent = (
-    fact["stockout_risk"]
+    inventory["stockout_risk"]
     .value_counts(normalize=True)
     .mul(100)
-    .round(2)
 )
 
-target_summary = pd.DataFrame({
-    "Count": target_counts,
-    "Percentage": target_percent
-})
-
-print(target_summary)
+print("\nTarget percentages:")
+print(target_percent.round(2))
 
 
 # ============================================================
-# 8. TARGET DISTRIBUTION VISUALIZATION
+# 7. DATA QUALITY CHECK
 # ============================================================
 
-plt.figure(figsize=(8, 5))
+print("\n================ MISSING VALUES ================\n")
 
-sns.countplot(
-    data=fact,
-    x="stockout_risk",
-    order=["Safe", "At-Risk", "Imminent"]
+print(
+    inventory.isna()
+    .sum()
+    .sort_values(ascending=False)
+    .head(15)
 )
 
-plt.title("Stockout Risk Distribution")
-plt.xlabel("Stockout Risk")
-plt.ylabel("Count")
-plt.tight_layout()
-plt.show()
+
+# ============================================================
+# 8. CLEAN CITY DISPLAY
+# ============================================================
+#
+# The project specification mentions inconsistent casing
+# in city_display.
+#
+# Example:
+#
+# Pune
+# PUNE
+# pune
+#
+# We standardize it.
+#
+# ============================================================
+
+if "city_display" in stores.columns:
+
+    stores["city_display"] = (
+        stores["city_display"]
+        .astype("string")
+        .str.strip()
+        .str.title()
+    )
 
 
 # ============================================================
-# 9. DATA QUALITY CHECK — CITY CASING
+# 9. CLEAN SUPPLIER RELIABILITY
 # ============================================================
-
-print("\n" + "=" * 70)
-print("CITY DISPLAY QUALITY CHECK")
-print("=" * 70)
-
-print("Before standardization:")
-print(stores[["city", "city_display"]].drop_duplicates())
-
-stores["city_display"] = (
-    stores["city_display"]
-    .astype("string")
-    .str.title()
-)
-
-print("\nAfter standardization:")
-print(stores[["city", "city_display"]].drop_duplicates())
-
-
+#
+# Some reliability values are "N/A".
+#
+# Convert them to numeric.
+#
+# Non-numeric values become NaN.
+#
 # ============================================================
-# 10. SUPPLIER RELIABILITY CLEANING
-# ============================================================
-
-print("\n" + "=" * 70)
-print("SUPPLIER RELIABILITY CHECK")
-print("=" * 70)
-
-print("Reliability dtype before cleaning:")
-print(suppliers["reliability_score"].dtype)
 
 suppliers["reliability_score"] = pd.to_numeric(
     suppliers["reliability_score"],
     errors="coerce"
 )
 
-print("\nMissing reliability values:")
+print("\nSupplier reliability missing values:")
 print(
     suppliers["reliability_score"]
     .isna()
     .sum()
 )
 
-print("\nSupplier reliability:")
-print(
-    suppliers[
-        [
-            "supplier_id",
-            "supplier_name",
-            "reliability_score"
-        ]
-    ]
-)
-
 
 # ============================================================
-# 11. SUPPLIER RELIABILITY IMPUTATION
+# 10. IMPUTE SUPPLIER RELIABILITY
 # ============================================================
 #
-# The project specification recommends category-median
-# imputation for supplier reliability.
+# The project specification suggests using the category
+# median.
 #
-# Since suppliers may supply one or more categories,
-# we use the median reliability across suppliers for each
-# category where possible.
+# Because suppliers can supply one or more categories,
+# we use the median reliability across suppliers that share
+# the supplied-category information where practical.
+#
+# For a simple and robust implementation, we use the
+# overall median if category-level imputation is not possible.
 #
 # ============================================================
-
-supplier_categories = suppliers["categories_supplied"].fillna("Unknown")
 
 supplier_median = suppliers["reliability_score"].median()
 
-suppliers["supplier_reliability_clean"] = (
+suppliers["reliability_score"] = (
     suppliers["reliability_score"]
     .fillna(supplier_median)
 )
 
-print("\nCleaned reliability:")
-print(
-    suppliers[
-        [
-            "supplier_id",
-            "reliability_score",
-            "supplier_reliability_clean"
-        ]
-    ]
-)
-
 
 # ============================================================
-# 12. CHECK LEAD TIME ACTUAL MISSINGNESS
+# 11. MERGE THE TABLES
+# ============================================================
+#
+# Start with the inventory fact table.
+#
+# Then attach:
+#
+# stores       → store_id
+# skus         → sku_id
+# suppliers    → supplier_id
+# events       → date
+#
+# IMPORTANT:
+# The final row count should remain 21,600.
+#
 # ============================================================
 
-print("\n" + "=" * 70)
-print("LEAD TIME ACTUAL MISSINGNESS")
-print("=" * 70)
-
-actual_missing = fact["lead_time_days_actual"].isna().sum()
-
-actual_missing_pct = (
-    fact["lead_time_days_actual"]
-    .isna()
-    .mean() * 100
-)
-
-print(
-    f"Missing lead_time_days_actual: "
-    f"{actual_missing:,} / {len(fact):,}"
-)
-
-print(
-    f"Missing percentage: "
-    f"{actual_missing_pct:.2f}%"
-)
+df = inventory.copy()
 
 
-# ============================================================
-# 13. JOIN THE FIVE TABLES
-# ============================================================
-
-print("\n" + "=" * 70)
-print("JOINING TABLES")
-print("=" * 70)
-
-df = fact.copy()
-
-
-# -------------------------------
-# Join stores
-# -------------------------------
+# -----------------------------
+# Merge stores
+# -----------------------------
 
 df = df.merge(
     stores,
@@ -369,9 +343,9 @@ df = df.merge(
 )
 
 
-# -------------------------------
-# Join SKUs
-# -------------------------------
+# -----------------------------
+# Merge SKUs
+# -----------------------------
 
 df = df.merge(
     skus,
@@ -382,9 +356,9 @@ df = df.merge(
 )
 
 
-# -------------------------------
-# Join suppliers
-# -------------------------------
+# -----------------------------
+# Merge suppliers
+# -----------------------------
 
 df = df.merge(
     suppliers,
@@ -395,9 +369,9 @@ df = df.merge(
 )
 
 
-# -------------------------------
-# Join events
-# -------------------------------
+# -----------------------------
+# Merge events
+# -----------------------------
 
 df = df.merge(
     events,
@@ -409,64 +383,66 @@ df = df.merge(
 
 
 # ============================================================
-# 14. VERIFY ROW COUNT AFTER JOIN
+# 12. VERIFY MERGE
 # ============================================================
+
+print("\n================ AFTER MERGING ================\n")
 
 print("Final shape:", df.shape)
 
-assert len(df) == 21600, (
-    f"Row count changed after joins: {len(df)}"
-)
+print("Expected rows:", 21600)
+print("Actual rows  :", len(df))
 
-print("✓ Row count remained 21,600")
-
-
-# ============================================================
-# 15. CHECK JOIN NULLS
-# ============================================================
-
-print("\n" + "=" * 70)
-print("JOIN QUALITY CHECK")
-print("=" * 70)
-
-join_columns = [
-    "city",
-    "sku_name",
-    "supplier_name",
-    "event_name"
-]
-
-for col in join_columns:
-    print(
-        f"{col}: "
-        f"{df[col].isna().sum()} missing"
-    )
+assert len(df) == 21600, \
+    "ERROR: Row count changed after merging!"
 
 
 # ============================================================
-# 16. FEATURE ENGINEERING
+# 13. FEATURE ENGINEERING
 # ============================================================
-
-print("\n" + "=" * 70)
-print("FEATURE ENGINEERING")
-print("=" * 70)
+#
+# This is one of the most important parts of the project.
+#
+# Raw variables are converted into business-meaningful
+# predictive features.
+#
+# ============================================================
 
 
 # ------------------------------------------------------------
-# Days of Cover
-# PDF:
+# 13.1 Days of Cover
+# ------------------------------------------------------------
+#
+# Formula from project specification:
+#
 # closing_stock / sales_velocity_7d
+#
+# Meaning:
+# How many days current stock can theoretically support
+# the observed sales velocity.
+#
 # ------------------------------------------------------------
 
-df["days_of_cover"] = np.where(
-    df["sales_velocity_7d"] > 0,
-    df["closing_stock"] / df["sales_velocity_7d"],
-    np.nan
+df["days_of_cover"] = (
+    df["closing_stock"] /
+    df["sales_velocity_7d"].replace(0, np.nan)
 )
 
 
 # ------------------------------------------------------------
-# Reorder Gap
+# 13.2 Reorder Gap
+# ------------------------------------------------------------
+#
+# Formula:
+#
+# reorder_point - closing_stock
+#
+# Positive:
+# Current stock is below reorder point.
+#
+# Negative:
+# Current stock is above reorder point.
+#
 # ------------------------------------------------------------
 
 df["reorder_gap"] = (
@@ -476,93 +452,110 @@ df["reorder_gap"] = (
 
 
 # ------------------------------------------------------------
-# Days of Cover Ratio
+# 13.3 Days of Cover Ratio
+# ------------------------------------------------------------
+#
+# Formula:
+#
+# days_of_cover / expected lead time
+#
 # ------------------------------------------------------------
 
-df["days_of_cover_ratio"] = np.where(
-    df["lead_time_days_expected"] > 0,
+df["days_of_cover_ratio"] = (
     df["days_of_cover"] /
-    df["lead_time_days_expected"],
-    np.nan
+    df["lead_time_days_expected"].replace(0, np.nan)
 )
 
 
-# ------------------------------------------------------------
-# Sort for historical features
-# ------------------------------------------------------------
+# ============================================================
+# 14. HISTORICAL REORDER FEATURE
+# ============================================================
+#
+# IMPORTANT:
+#
+# We don't want today's reorder decision to predict today's
+# stockout risk because that could create leakage.
+#
+# Instead we use the PREVIOUS day's reorder behavior.
+#
+# ============================================================
 
 df = df.sort_values(
     ["store_id", "sku_id", "date"]
 ).reset_index(drop=True)
 
 
-# ------------------------------------------------------------
-# Previous Reorder
-# ------------------------------------------------------------
-
-reorder_binary = (
-    df["reorder_placed"]
-    .astype("string")
-    .str.upper()
-    .map({"Y": 1, "N": 0})
-)
-
 df["previous_reorder"] = (
-    reorder_binary
-    .groupby(
-        [df["store_id"], df["sku_id"]]
-    )
+    df.groupby(["store_id", "sku_id"])["reorder_placed"]
     .shift(1)
 )
 
 
-# ------------------------------------------------------------
-# Recent Reorder
-#
-# Here we use whether a reorder happened on the
-# immediately previous observation.
-# ------------------------------------------------------------
+# Convert previous reorder to numeric indicator.
 
-df["is_recent_reorder"] = (
+df["previous_reorder_flag"] = (
     df["previous_reorder"]
-    .eq(1)
-    .astype("int")
+    .map({
+        "Y": 1,
+        "N": 0
+    })
 )
 
 
 # ------------------------------------------------------------
-# Day of month
+# Recent reorder
 # ------------------------------------------------------------
+#
+# Example:
+# If a reorder happened recently, mark it as 1.
+#
+# Here we use previous reorder as a simple historical signal.
+#
+# ------------------------------------------------------------
+
+df["is_recent_reorder"] = (
+    df["previous_reorder_flag"]
+    .fillna(0)
+)
+
+
+# ============================================================
+# 15. TIME FEATURES
+# ============================================================
 
 df["day_of_month"] = df["date"].dt.day
-
-
-# ------------------------------------------------------------
-# Day of week
-# Monday = 0
-# Sunday = 6
-# ------------------------------------------------------------
 
 df["day_of_week"] = df["date"].dt.dayofweek
 
 
-# ------------------------------------------------------------
-# Days since festival start
+# ============================================================
+# 16. FESTIVAL TIME FEATURE
+# ============================================================
 #
-# -1 means outside festival period
-# 0 = festival start
-# 1 = second festival day
+# Project specification:
+# Diwali Week = Oct 22–26, 2026
+#
+# We create a feature describing the position inside
+# the festival period.
+#
+# -1 = outside festival period
+#  0 = festival start
+#  1 = second festival day
 # ...
-# ------------------------------------------------------------
+#
+# ============================================================
+
+festival_start = pd.Timestamp("2026-10-22")
+festival_end = pd.Timestamp("2026-10-26")
 
 df["days_since_festival_start"] = np.where(
     df["date"].between(
-        FESTIVAL_START,
-        FESTIVAL_END
+        festival_start,
+        festival_end
     ),
     (
         df["date"] -
-        FESTIVAL_START
+        festival_start
     ).dt.days,
     -1
 )
@@ -573,7 +566,7 @@ df["days_since_festival_start"] = np.where(
 # ============================================================
 
 df["reliability_group"] = pd.cut(
-    df["supplier_reliability_clean"],
+    df["reliability_score"],
     bins=[-np.inf, 0.75, 0.85, np.inf],
     labels=[
         "<0.75",
@@ -583,227 +576,155 @@ df["reliability_group"] = pd.cut(
     right=False
 )
 
-# Note:
-# If you want exactly:
-# <0.75
-# 0.75–0.85
-# >=0.85
-#
-# the boundary handling should be checked carefully.
-#
-# We will use a custom function below for reporting.
 
-def reliability_group_func(x):
-    if pd.isna(x):
-        return np.nan
-    elif x < 0.75:
-        return "<0.75"
-    elif x < 0.85:
-        return "0.75-0.85"
-    else:
-        return ">=0.85"
+# ============================================================
+# 18. FEATURE ENGINEERING CHECK
+# ============================================================
 
-df["reliability_group"] = (
-    df["supplier_reliability_clean"]
-    .apply(reliability_group_func)
+print("\n================ ENGINEERED FEATURES ================\n")
+
+engineered_features = [
+    "days_of_cover",
+    "reorder_gap",
+    "days_of_cover_ratio",
+    "previous_reorder",
+    "is_recent_reorder",
+    "day_of_month",
+    "day_of_week",
+    "days_since_festival_start",
+    "reliability_group"
+]
+
+print(df[engineered_features].head())
+
+
+# ============================================================
+# 19. CHECK ENGINEERED FEATURE MISSING VALUES
+# ============================================================
+
+print("\nMissing values in engineered features:")
+
+print(
+    df[engineered_features]
+    .isna()
+    .sum()
 )
 
 
 # ============================================================
-# 18. CHECK FINAL DATASET
+# 20. EXPLORATORY DATA ANALYSIS
 # ============================================================
 
-print("\n" + "=" * 70)
-print("FINAL DATASET")
-print("=" * 70)
 
-print("Shape:", df.shape)
+# ------------------------------------------------------------
+# Target Distribution
+# ------------------------------------------------------------
 
-print("\nColumns:")
-print(df.columns.tolist())
+plt.figure(figsize=(8, 5))
+
+sns.countplot(
+    data=df,
+    x="stockout_risk"
+)
+
+plt.title("Stockout Risk Distribution")
+plt.xlabel("Risk Class")
+plt.ylabel("Number of Records")
+
+plt.tight_layout()
+plt.show()
+
+
+# ------------------------------------------------------------
+# Festival vs Non-Festival
+# ------------------------------------------------------------
+
+festival_risk = pd.crosstab(
+    df["is_festival_week"],
+    df["stockout_risk"],
+    normalize="index"
+) * 100
+
+print("\nFestival risk distribution:")
+print(festival_risk.round(2))
+
+
+# ------------------------------------------------------------
+# Imminent rate by festival status
+# ------------------------------------------------------------
+
+festival_imminent = (
+    df.groupby("is_festival_week")["stockout_risk"]
+    .apply(lambda x: (x == "Imminent").mean() * 100)
+)
+
+print("\nImminent rate by festival status:")
+print(festival_imminent)
 
 
 # ============================================================
-# 19. MISSING VALUES REPORT
+# 21. PERISHABLE ANALYSIS
 # ============================================================
 
-print("\n" + "=" * 70)
-print("MISSING VALUE REPORT")
-print("=" * 70)
+perishable_imminent = (
+    df.groupby("is_perishable")["stockout_risk"]
+    .apply(lambda x: (x == "Imminent").mean() * 100)
+)
 
-missing_report = (
-    df.isna()
-    .sum()
+print("\nImminent rate by perishability:")
+print(perishable_imminent)
+
+
+# ============================================================
+# 22. SUPPLIER RELIABILITY ANALYSIS
+# ============================================================
+
+supplier_reliability_analysis = (
+    df.groupby("reliability_group",
+               observed=False)["stockout_risk"]
+    .apply(lambda x: (x == "Imminent").mean() * 100)
+)
+
+print("\nImminent rate by supplier reliability:")
+print(supplier_reliability_analysis)
+
+
+# ============================================================
+# 23. CATEGORY ANALYSIS
+# ============================================================
+
+category_analysis = (
+    df.groupby("category")["stockout_risk"]
+    .apply(lambda x: (x == "Imminent").mean() * 100)
     .sort_values(ascending=False)
 )
 
-missing_report = (
-    missing_report[missing_report > 0]
-)
-
-print(missing_report)
-
-
-# ============================================================
-# 20. FINAL TARGET DISTRIBUTION
-# ============================================================
-
-print("\n" + "=" * 70)
-print("FINAL TARGET DISTRIBUTION")
-print("=" * 70)
-
-final_target = pd.DataFrame({
-    "Count": df["stockout_risk"].value_counts(),
-    "Percentage": (
-        df["stockout_risk"]
-        .value_counts(normalize=True)
-        .mul(100)
-        .round(2)
-    )
-})
-
-print(final_target)
-
-
-# ============================================================
-# 21. BUSINESS ANALYSIS — FESTIVAL
-# ============================================================
-
-print("\n" + "=" * 70)
-print("FESTIVAL ANALYSIS")
-print("=" * 70)
-
-festival_analysis = (
-    df.groupby("is_festival_week", observed=True)
-      .agg(
-          records=("stockout_risk", "size"),
-          imminent_rate=(
-              "stockout_risk",
-              lambda x:
-              (x == "Imminent").mean() * 100
-          )
-      )
-)
-
-print(festival_analysis)
-
-
-# ============================================================
-# 22. BUSINESS ANALYSIS — PERISHABLE
-# ============================================================
-
-print("\n" + "=" * 70)
-print("PERISHABILITY ANALYSIS")
-print("=" * 70)
-
-perishable_analysis = (
-    df.groupby("is_perishable", observed=True)
-      .agg(
-          records=("stockout_risk", "size"),
-          imminent_rate=(
-              "stockout_risk",
-              lambda x:
-              (x == "Imminent").mean() * 100
-          )
-      )
-)
-
-print(perishable_analysis)
-
-
-# ============================================================
-# 23. BUSINESS ANALYSIS — SUPPLIER RELIABILITY
-# ============================================================
-
-print("\n" + "=" * 70)
-print("SUPPLIER RELIABILITY ANALYSIS")
-print("=" * 70)
-
-reliability_analysis = (
-    df.groupby("reliability_group", observed=True)
-      .agg(
-          records=("stockout_risk", "size"),
-          imminent_rate=(
-              "stockout_risk",
-              lambda x:
-              (x == "Imminent").mean() * 100
-          )
-      )
-)
-
-print(reliability_analysis)
-
-
-# ============================================================
-# 24. BUSINESS ANALYSIS — CATEGORY
-# ============================================================
-
-print("\n" + "=" * 70)
-print("CATEGORY ANALYSIS")
-print("=" * 70)
-
-category_analysis = (
-    df.groupby("category", observed=True)
-      .agg(
-          records=("stockout_risk", "size"),
-          imminent_rate=(
-              "stockout_risk",
-              lambda x:
-              (x == "Imminent").mean() * 100
-          )
-      )
-      .sort_values(
-          "imminent_rate",
-          ascending=False
-      )
-)
-
+print("\nImminent rate by category:")
 print(category_analysis)
 
 
 # ============================================================
-# 25. BUSINESS ANALYSIS — STORE
+# 24. STORE ANALYSIS
 # ============================================================
-
-print("\n" + "=" * 70)
-print("STORE ANALYSIS")
-print("=" * 70)
 
 store_analysis = (
     df.groupby(
-        ["store_id", "city"],
-        observed=True
-    )
-    .agg(
-        records=("stockout_risk", "size"),
-        imminent_rate=(
-            "stockout_risk",
-            lambda x:
-            (x == "Imminent").mean() * 100
-        )
-    )
-    .sort_values(
-        "imminent_rate",
-        ascending=False
-    )
+        ["store_id", "city"]
+    )["stockout_risk"]
+    .apply(lambda x: (x == "Imminent").mean() * 100)
+    .sort_values(ascending=False)
 )
 
+print("\nImminent rate by store:")
 print(store_analysis)
 
 
 # ============================================================
-# 26. RISK GROUP FEATURE ANALYSIS
+# 25. RISK GROUP FEATURE ANALYSIS
 # ============================================================
 
-print("\n" + "=" * 70)
-print("RISK GROUP FEATURE ANALYSIS")
-print("=" * 70)
-
-risk_group_analysis = (
-    df.groupby(
-        "stockout_risk",
-        observed=True
-    )[
+risk_group_means = (
+    df.groupby("stockout_risk")[
         [
             "days_of_cover",
             "days_of_cover_ratio",
@@ -813,104 +734,31 @@ risk_group_analysis = (
         ]
     ]
     .mean()
-    .reindex(
-        ["Safe", "At-Risk", "Imminent"]
-    )
 )
 
-print(
-    risk_group_analysis.round(3)
-)
+print("\nAverage features by risk group:")
+print(risk_group_means)
 
 
 # ============================================================
-# 27. RISK GROUP VISUALIZATION
+# 26. CHECK TARGET LEAKAGE
+# ============================================================
+#
+# Target:
+#
+# stockout_risk
+#
+# Must NOT appear in X.
+#
+# We also remove identifiers because IDs generally shouldn't
+# be treated as meaningful numerical predictors.
+#
 # ============================================================
 
-risk_group_analysis.plot(
-    kind="bar",
-    figsize=(12, 6)
-)
+TARGET = "stockout_risk"
 
-plt.title(
-    "Average Inventory Features by Stockout Risk"
-)
-
-plt.xlabel("Stockout Risk")
-plt.ylabel("Average Value")
-plt.xticks(rotation=0)
-
-plt.tight_layout()
-plt.show()
-
-
-# ============================================================
-# 28. CATEGORY VISUALIZATION
-# ============================================================
-
-plt.figure(figsize=(10, 6))
-
-sns.barplot(
-    data=category_analysis.reset_index(),
-    x="category",
-    y="imminent_rate"
-)
-
-plt.title(
-    "Imminent Stockout Rate by Category"
-)
-
-plt.xlabel("Category")
-plt.ylabel("Imminent Rate (%)")
-
-plt.xticks(rotation=45)
-
-plt.tight_layout()
-plt.show()
-
-
-# ============================================================
-# 29. FESTIVAL VISUALIZATION
-# ============================================================
-
-festival_plot = (
-    festival_analysis
-    .reset_index()
-)
-
-plt.figure(figsize=(7, 5))
-
-sns.barplot(
-    data=festival_plot,
-    x="is_festival_week",
-    y="imminent_rate"
-)
-
-plt.title(
-    "Imminent Stockout Rate: Festival vs Non-Festival"
-)
-
-plt.xlabel("Festival Week")
-plt.ylabel("Imminent Rate (%)")
-
-plt.tight_layout()
-plt.show()
-
-
-# ============================================================
-# 30. PREPARE MODELING DATA
-# ============================================================
-
-print("\n" + "=" * 70)
-print("PREPARING MODELING DATA")
-print("=" * 70)
-
-
-# IMPORTANT:
-# Target and identifiers are not used as model features.
-
-drop_columns = [
-    "stockout_risk",
+DROP_COLUMNS = [
+    TARGET,
     "date",
     "store_id",
     "sku_id",
@@ -918,43 +766,42 @@ drop_columns = [
 ]
 
 
-# Remove columns that can be duplicate IDs created by joins.
-# Keep meaningful supplier information.
-
-duplicate_identifier_columns = [
-    col
-    for col in [
-        "supplier_id_sku",
-        "supplier_id_supplier",
-        "supplier_id_y",
-        "supplier_id_x"
-    ]
-    if col in df.columns
-]
-
-drop_columns.extend(
-    duplicate_identifier_columns
-)
-
-
 # ============================================================
-# 31. TIME-BASED TRAIN/TEST SPLIT
+# 27. TIME-BASED TRAIN/TEST SPLIT
 # ============================================================
+#
+# Training:
+# Oct 1–23
+#
+# Testing:
+# Oct 24–30
+#
+# IMPORTANT:
+# No random train_test_split here.
+#
+# ============================================================
+
+TRAIN_END = pd.Timestamp("2026-10-23")
+TEST_START = pd.Timestamp("2026-10-24")
+
 
 train_df = df[
     df["date"] <= TRAIN_END
 ].copy()
+
 
 test_df = df[
     df["date"] >= TEST_START
 ].copy()
 
 
-print("Training shape:", train_df.shape)
-print("Testing shape :", test_df.shape)
+print("\n================ TRAIN / TEST SPLIT ================\n")
+
+print("Training rows:", len(train_df))
+print("Testing rows :", len(test_df))
 
 print(
-    "\nTraining dates:",
+    "Training dates:",
     train_df["date"].min(),
     "to",
     train_df["date"].max()
@@ -969,51 +816,50 @@ print(
 
 
 # ============================================================
-# 32. TEMPORAL LEAKAGE CHECK
-# ============================================================
-
-assert train_df["date"].max() < test_df["date"].min()
-
-print("\n✓ No train dates occur after test period begins")
-print("✓ No temporal overlap between train and test")
-
-
-# ============================================================
-# 33. X AND y
+# 28. CREATE X AND y
 # ============================================================
 
 X_train = train_df.drop(
-    columns=drop_columns,
-    errors="ignore"
+    columns=DROP_COLUMNS
 )
 
-y_train = train_df["stockout_risk"]
+y_train = train_df[TARGET]
+
 
 X_test = test_df.drop(
-    columns=drop_columns,
-    errors="ignore"
+    columns=DROP_COLUMNS
 )
 
-y_test = test_df["stockout_risk"]
+y_test = test_df[TARGET]
 
 
-print("\nX_train:", X_train.shape)
-print("X_test :", X_test.shape)
+print("\nX_train shape:", X_train.shape)
+print("X_test shape :", X_test.shape)
+
+print("\ny_train distribution:")
+print(y_train.value_counts())
+
+print("\ny_test distribution:")
+print(y_test.value_counts())
 
 
 # ============================================================
-# 34. IDENTIFY NUMERIC / CATEGORICAL FEATURES
+# 29. IDENTIFY NUMERIC AND CATEGORICAL FEATURES
 # ============================================================
 
 numeric_features = X_train.select_dtypes(
-    include=["number", "bool"]
+    include=["int64", "float64", "int32", "float32"]
 ).columns.tolist()
+
 
 categorical_features = X_train.select_dtypes(
     include=["object", "string", "category"]
 ).columns.tolist()
 
-print("\nNumeric features:")
+
+print("\n================ FEATURES ================\n")
+
+print("Numeric features:")
 print(numeric_features)
 
 print("\nCategorical features:")
@@ -1021,7 +867,17 @@ print(categorical_features)
 
 
 # ============================================================
-# 35. PREPROCESSOR
+# 30. PREPROCESSING
+# ============================================================
+#
+# NUMERIC:
+#   Missing value → median
+#   Scaling
+#
+# CATEGORICAL:
+#   Missing value → most frequent
+#   One-hot encoding
+#
 # ============================================================
 
 numeric_pipeline = Pipeline(
@@ -1042,9 +898,7 @@ categorical_pipeline = Pipeline(
     steps=[
         (
             "imputer",
-            SimpleImputer(
-                strategy="most_frequent"
-            )
+            SimpleImputer(strategy="most_frequent")
         ),
         (
             "onehot",
@@ -1073,12 +927,8 @@ preprocessor = ColumnTransformer(
 
 
 # ============================================================
-# 36. MAJORITY CLASSIFIER BASELINE
+# 31. MODEL 1 — MAJORITY CLASSIFIER
 # ============================================================
-
-print("\n" + "=" * 70)
-print("MAJORITY CLASSIFIER")
-print("=" * 70)
 
 baseline_model = Pipeline(
     steps=[
@@ -1095,23 +945,26 @@ baseline_model = Pipeline(
     ]
 )
 
+
 baseline_model.fit(
     X_train,
     y_train
 )
 
-baseline_pred = baseline_model.predict(
+
+baseline_predictions = baseline_model.predict(
     X_test
 )
 
 
 # ============================================================
-# 37. LOGISTIC REGRESSION
+# 32. MODEL 2 — LOGISTIC REGRESSION
 # ============================================================
-
-print("\n" + "=" * 70)
-print("MULTINOMIAL LOGISTIC REGRESSION")
-print("=" * 70)
+#
+# class_weight="balanced" helps the model pay attention
+# to minority classes.
+#
+# ============================================================
 
 logistic_model = Pipeline(
     steps=[
@@ -1124,30 +977,27 @@ logistic_model = Pipeline(
             LogisticRegression(
                 max_iter=2000,
                 class_weight="balanced",
-                multi_class="multinomial",
-                random_state=RANDOM_STATE
+                random_state=42
             )
         )
     ]
 )
+
 
 logistic_model.fit(
     X_train,
     y_train
 )
 
-logistic_pred = logistic_model.predict(
+
+logistic_predictions = logistic_model.predict(
     X_test
 )
 
 
 # ============================================================
-# 38. RANDOM FOREST
+# 33. MODEL 3 — RANDOM FOREST
 # ============================================================
-
-print("\n" + "=" * 70)
-print("RANDOM FOREST")
-print("=" * 70)
 
 random_forest_model = Pipeline(
     steps=[
@@ -1160,97 +1010,99 @@ random_forest_model = Pipeline(
             RandomForestClassifier(
                 n_estimators=300,
                 class_weight="balanced",
-                random_state=RANDOM_STATE,
+                random_state=42,
                 n_jobs=-1
             )
         )
     ]
 )
 
+
 random_forest_model.fit(
     X_train,
     y_train
 )
 
-rf_pred = random_forest_model.predict(
+
+rf_predictions = random_forest_model.predict(
     X_test
 )
 
 
 # ============================================================
-# 39. EVALUATION FUNCTION
+# 34. EVALUATION FUNCTION
 # ============================================================
 
 def evaluate_model(
     model_name,
     y_true,
-    y_pred
+    predictions
 ):
+
+    accuracy = accuracy_score(
+        y_true,
+        predictions
+    )
+
+    macro_precision = precision_score(
+        y_true,
+        predictions,
+        average="macro",
+        zero_division=0
+    )
+
+    macro_recall = recall_score(
+        y_true,
+        predictions,
+        average="macro",
+        zero_division=0
+    )
+
+    macro_f1 = f1_score(
+        y_true,
+        predictions,
+        average="macro",
+        zero_division=0
+    )
+
+    imminent_precision = precision_score(
+        y_true,
+        predictions,
+        labels=["Imminent"],
+        average="macro",
+        zero_division=0
+    )
+
+    imminent_recall = recall_score(
+        y_true,
+        predictions,
+        labels=["Imminent"],
+        average="macro",
+        zero_division=0
+    )
+
+    imminent_f1 = f1_score(
+        y_true,
+        predictions,
+        labels=["Imminent"],
+        average="macro",
+        zero_division=0
+    )
 
     return {
         "Model": model_name,
-
-        "Accuracy":
-            accuracy_score(
-                y_true,
-                y_pred
-            ),
-
-        "Macro Precision":
-            precision_score(
-                y_true,
-                y_pred,
-                average="macro",
-                zero_division=0
-            ),
-
-        "Macro Recall":
-            recall_score(
-                y_true,
-                y_pred,
-                average="macro",
-                zero_division=0
-            ),
-
-        "Macro F1":
-            f1_score(
-                y_true,
-                y_pred,
-                average="macro",
-                zero_division=0
-            ),
-
-        "Imminent Precision":
-            precision_score(
-                y_true,
-                y_pred,
-                labels=["Imminent"],
-                average="macro",
-                zero_division=0
-            ),
-
-        "Imminent Recall":
-            recall_score(
-                y_true,
-                y_pred,
-                labels=["Imminent"],
-                average="macro",
-                zero_division=0
-            ),
-
-        "Imminent F1":
-            f1_score(
-                y_true,
-                y_pred,
-                labels=["Imminent"],
-                average="macro",
-                zero_division=0
-            )
+        "Accuracy": accuracy,
+        "Macro Precision": macro_precision,
+        "Macro Recall": macro_recall,
+        "Macro F1": macro_f1,
+        "Imminent Precision": imminent_precision,
+        "Imminent Recall": imminent_recall,
+        "Imminent F1": imminent_f1
     }
 
 
 # ============================================================
-# 40. MODEL COMPARISON
+# 35. EVALUATE ALL MODELS
 # ============================================================
 
 results = []
@@ -1259,7 +1111,7 @@ results.append(
     evaluate_model(
         "Majority Classifier",
         y_test,
-        baseline_pred
+        baseline_predictions
     )
 )
 
@@ -1267,7 +1119,7 @@ results.append(
     evaluate_model(
         "Multinomial Logistic Regression",
         y_test,
-        logistic_pred
+        logistic_predictions
     )
 )
 
@@ -1275,30 +1127,17 @@ results.append(
     evaluate_model(
         "Random Forest",
         y_test,
-        rf_pred
+        rf_predictions
     )
 )
 
-model_comparison = pd.DataFrame(
-    results
-)
 
-print("\n" + "=" * 70)
-print("MODEL COMPARISON")
-print("=" * 70)
-
-print(
-    model_comparison
-    .round(4)
-    .to_string(index=False)
-)
+results_df = pd.DataFrame(results)
 
 
-# ============================================================
-# 41. FORMAT RESULTS AS PERCENTAGES
-# ============================================================
+# Convert metrics to percentages
 
-percentage_results = model_comparison.copy()
+results_display = results_df.copy()
 
 metric_columns = [
     "Accuracy",
@@ -1310,74 +1149,60 @@ metric_columns = [
     "Imminent F1"
 ]
 
-for col in metric_columns:
-    percentage_results[col] = (
-        percentage_results[col] * 100
-    ).round(2)
+results_display[metric_columns] = (
+    results_display[metric_columns] * 100
+)
 
-print("\nPercentage Results:")
+
+print("\n================ MODEL COMPARISON ================\n")
+
 print(
-    percentage_results
-    .to_string(index=False)
+    results_display.round(2).to_string(
+        index=False
+    )
 )
 
 
 # ============================================================
-# 42. CLASSIFICATION REPORTS
+# 36. CLASSIFICATION REPORTS
 # ============================================================
 
-print("\n" + "=" * 70)
-print("BASELINE CLASSIFICATION REPORT")
-print("=" * 70)
+print("\n================ LOGISTIC REGRESSION ================\n")
 
 print(
     classification_report(
         y_test,
-        baseline_pred,
+        logistic_predictions,
         zero_division=0
     )
 )
 
 
-print("\n" + "=" * 70)
-print("LOGISTIC REGRESSION CLASSIFICATION REPORT")
-print("=" * 70)
+print("\n================ RANDOM FOREST ================\n")
 
 print(
     classification_report(
         y_test,
-        logistic_pred,
-        zero_division=0
-    )
-)
-
-
-print("\n" + "=" * 70)
-print("RANDOM FOREST CLASSIFICATION REPORT")
-print("=" * 70)
-
-print(
-    classification_report(
-        y_test,
-        rf_pred,
+        rf_predictions,
         zero_division=0
     )
 )
 
 
 # ============================================================
-# 43. CONFUSION MATRIX — LOGISTIC REGRESSION
+# 37. CONFUSION MATRIX — LOGISTIC REGRESSION
 # ============================================================
 
 cm_logistic = confusion_matrix(
     y_test,
-    logistic_pred,
+    logistic_predictions,
     labels=[
         "Safe",
         "At-Risk",
         "Imminent"
     ]
 )
+
 
 plt.figure(figsize=(7, 6))
 
@@ -1409,18 +1234,19 @@ plt.show()
 
 
 # ============================================================
-# 44. CONFUSION MATRIX — RANDOM FOREST
+# 38. CONFUSION MATRIX — RANDOM FOREST
 # ============================================================
 
 cm_rf = confusion_matrix(
     y_test,
-    rf_pred,
+    rf_predictions,
     labels=[
         "Safe",
         "At-Risk",
         "Imminent"
     ]
 )
+
 
 plt.figure(figsize=(7, 6))
 
@@ -1452,36 +1278,52 @@ plt.show()
 
 
 # ============================================================
-# 45. RANDOM FOREST FEATURE IMPORTANCE
+# 39. RANDOM FOREST FEATURE IMPORTANCE
 # ============================================================
-
-print("\n" + "=" * 70)
-print("RANDOM FOREST FEATURE IMPORTANCE")
-print("=" * 70)
+#
+# IMPORTANT:
+#
+# Random Forest sees transformed features after:
+#
+#   preprocessing
+#       ↓
+#   one-hot encoding
+#
+# Therefore, the number of feature names is larger than
+# the number of original columns.
+#
+# ============================================================
 
 rf_preprocessor = (
     random_forest_model
     .named_steps["preprocessor"]
 )
 
+
 rf_classifier = (
     random_forest_model
     .named_steps["classifier"]
 )
+
 
 feature_names = (
     rf_preprocessor
     .get_feature_names_out()
 )
 
-rf_importance = pd.DataFrame({
+
+feature_importance_df = pd.DataFrame({
+
     "Feature": feature_names,
+
     "Importance":
         rf_classifier.feature_importances_
+
 })
 
-rf_importance = (
-    rf_importance
+
+feature_importance_df = (
+    feature_importance_df
     .sort_values(
         "Importance",
         ascending=False
@@ -1489,32 +1331,37 @@ rf_importance = (
     .reset_index(drop=True)
 )
 
+
+print("\n================ RANDOM FOREST FEATURE IMPORTANCE ================\n")
+
 print(
-    rf_importance.head(25)
+    feature_importance_df
+    .head(20)
 )
 
 
 # ============================================================
-# 46. RANDOM FOREST FEATURE IMPORTANCE PLOT
+# 40. PLOT TOP RANDOM FOREST FEATURES
 # ============================================================
 
-top_rf = (
-    rf_importance
-    .head(20)
+top_features = (
+    feature_importance_df
+    .head(15)
     .sort_values(
         "Importance"
     )
 )
 
-plt.figure(figsize=(10, 8))
+
+plt.figure(figsize=(10, 7))
 
 plt.barh(
-    top_rf["Feature"],
-    top_rf["Importance"]
+    top_features["Feature"],
+    top_features["Importance"]
 )
 
 plt.title(
-    "Top Random Forest Feature Importances"
+    "Top Random Forest Features"
 )
 
 plt.xlabel("Importance")
@@ -1524,392 +1371,238 @@ plt.show()
 
 
 # ============================================================
-# 47. LOGISTIC REGRESSION COEFFICIENTS
+# 41. LOGISTIC REGRESSION COEFFICIENTS
+# ============================================================
+#
+# Logistic Regression provides coefficients that can help
+# interpret which transformed features are associated with
+# each class.
+#
+# IMPORTANT:
+#
+# These are model associations, NOT causal effects.
+#
 # ============================================================
 
-print("\n" + "=" * 70)
-print("LOGISTIC REGRESSION COEFFICIENTS")
-print("=" * 70)
-
-log_preprocessor = (
+logistic_preprocessor = (
     logistic_model
     .named_steps["preprocessor"]
 )
 
-log_classifier = (
+
+logistic_classifier = (
     logistic_model
     .named_steps["classifier"]
 )
 
-log_feature_names = (
-    log_preprocessor
+
+logistic_feature_names = (
+    logistic_preprocessor
     .get_feature_names_out()
 )
 
-log_coefficients = pd.DataFrame(
-    log_classifier.coef_,
-    index=log_classifier.classes_,
-    columns=log_feature_names
+
+coefficient_matrix = (
+    logistic_classifier
+    .coef_
 )
 
 
-# ============================================================
-# 48. IMMINENT COEFFICIENTS
-# ============================================================
+classes = (
+    logistic_classifier
+    .classes_
+)
+
+
+logistic_coefficients = pd.DataFrame(
+    coefficient_matrix.T,
+    index=logistic_feature_names,
+    columns=classes
+)
+
+
+# ------------------------------------------------------------
+# Imminent coefficients
+# ------------------------------------------------------------
 
 imminent_coefficients = (
-    log_coefficients
-    .loc["Imminent"]
-    .sort_values(
-        ascending=False
+    logistic_coefficients["Imminent"]
+    .sort_values(ascending=False)
+)
+
+
+print(
+    "\n================ POSITIVE IMMINENT COEFFICIENTS ================\n"
+)
+
+print(
+    imminent_coefficients
+    .head(15)
+)
+
+
+print(
+    "\n================ NEGATIVE IMMINENT COEFFICIENTS ================\n"
+)
+
+print(
+    imminent_coefficients
+    .tail(15)
+)
+
+
+# ============================================================
+# 42. BUSINESS INSIGHT SUMMARY
+# ============================================================
+
+print("\n================ BUSINESS INSIGHTS ================\n")
+
+
+# Festival
+
+festival_rates = (
+    df.groupby("is_festival_week")["stockout_risk"]
+    .apply(
+        lambda x:
+        (x == "Imminent").mean() * 100
     )
 )
 
-print("\nTop positive associations:")
-print(
-    imminent_coefficients
-    .head(20)
-)
+print("\nFestival effect:")
+print(festival_rates.round(2))
 
 
-print("\nTop negative associations:")
-print(
-    imminent_coefficients
-    .tail(20)
-)
+# Perishable
 
-
-# ============================================================
-# 49. LOGISTIC COEFFICIENT PLOT
-# ============================================================
-
-top_positive = (
-    imminent_coefficients
-    .head(10)
-    .sort_values()
-)
-
-top_negative = (
-    imminent_coefficients
-    .tail(10)
-    .sort_values()
-)
-
-plt.figure(figsize=(10, 8))
-
-selected_coefficients = pd.concat(
-    [
-        top_negative,
-        top_positive
-    ]
-)
-
-plt.barh(
-    selected_coefficients.index,
-    selected_coefficients.values
-)
-
-plt.title(
-    "Logistic Regression Associations with Imminent Risk"
-)
-
-plt.xlabel("Coefficient")
-
-plt.tight_layout()
-plt.show()
-
-
-# ============================================================
-# 50. IMMINENT-CLASS METRICS
-# ============================================================
-
-imminent_results = []
-
-for model_name, predictions in [
-    ("Majority Classifier", baseline_pred),
-    ("Multinomial Logistic Regression", logistic_pred),
-    ("Random Forest", rf_pred)
-]:
-
-    imminent_results.append({
-        "Model": model_name,
-
-        "Imminent Precision":
-            precision_score(
-                y_test,
-                predictions,
-                labels=["Imminent"],
-                average="macro",
-                zero_division=0
-            ),
-
-        "Imminent Recall":
-            recall_score(
-                y_test,
-                predictions,
-                labels=["Imminent"],
-                average="macro",
-                zero_division=0
-            ),
-
-        "Imminent F1":
-            f1_score(
-                y_test,
-                predictions,
-                labels=["Imminent"],
-                average="macro",
-                zero_division=0
-            )
-    })
-
-imminent_results_df = pd.DataFrame(
-    imminent_results
-)
-
-print("\n" + "=" * 70)
-print("IMMINENT CLASS PERFORMANCE")
-print("=" * 70)
-
-print(
-    (
-        imminent_results_df
-        .assign(
-            **{
-                col:
-                lambda x, c=col:
-                x[c] * 100
-                for col in [
-                    "Imminent Precision",
-                    "Imminent Recall",
-                    "Imminent F1"
-                ]
-            }
-        )
-        .round(2)
-        .to_string(index=False)
+perishable_rates = (
+    df.groupby("is_perishable")["stockout_risk"]
+    .apply(
+        lambda x:
+        (x == "Imminent").mean() * 100
     )
 )
 
+print("\nPerishable effect:")
+print(perishable_rates.round(2))
 
-# ============================================================
-# 51. FINAL MASTER RESULTS TABLE
-# ============================================================
 
-final_results = model_comparison[
-    [
-        "Model",
-        "Accuracy",
-        "Macro Precision",
-        "Macro Recall",
-        "Macro F1",
-        "Imminent Precision",
-        "Imminent Recall",
-        "Imminent F1"
-    ]
-].copy()
+# Category
 
-for col in final_results.columns[1:]:
-    final_results[col] = (
-        final_results[col] * 100
-    ).round(2)
-
-print("\n" + "=" * 70)
-print("FINAL MODEL RESULTS")
-print("=" * 70)
+print("\nCategory Imminent rates:")
 
 print(
-    final_results
-    .to_string(index=False)
+    category_analysis.round(2)
 )
 
 
-# ============================================================
-# 52. AUTOMATIC PROJECT SUMMARY
-# ============================================================
+# Store
 
-print("\n" + "=" * 70)
-print("PROJECT SUMMARY")
-print("=" * 70)
+print("\nStore Imminent rates:")
 
 print(
-    f"""
-Dataset:
-    Total records        : {len(df):,}
-    Total features       : {df.shape[1]}
-    Unique stores        : {df["store_id"].nunique()}
-    Unique SKUs          : {df["sku_id"].nunique()}
-    Unique suppliers     : {df["supplier_id"].nunique()}
-    Unique dates         : {df["date"].nunique()}
-
-Train/Test:
-    Training records     : {len(train_df):,}
-    Testing records      : {len(test_df):,}
-    Training period      : {train_df["date"].min().date()} to {train_df["date"].max().date()}
-    Testing period       : {test_df["date"].min().date()} to {test_df["date"].max().date()}
-
-Models:
-    Majority Classifier
-    Multinomial Logistic Regression
-    Random Forest
-
-Key metric:
-    Imminent Recall
-
-Logistic Regression:
-    Accuracy            : {final_results.loc[final_results["Model"] == "Multinomial Logistic Regression", "Accuracy"].iloc[0]:.2f}%
-    Macro F1            : {final_results.loc[final_results["Model"] == "Multinomial Logistic Regression", "Macro F1"].iloc[0]:.2f}%
-    Imminent Recall     : {final_results.loc[final_results["Model"] == "Multinomial Logistic Regression", "Imminent Recall"].iloc[0]:.2f}%
-
-Random Forest:
-    Accuracy            : {final_results.loc[final_results["Model"] == "Random Forest", "Accuracy"].iloc[0]:.2f}%
-    Macro F1            : {final_results.loc[final_results["Model"] == "Random Forest", "Macro F1"].iloc[0]:.2f}%
-    Imminent Recall     : {final_results.loc[final_results["Model"] == "Random Forest", "Imminent Recall"].iloc[0]:.2f}%
-"""
+    store_analysis.round(2)
 )
 
 
 # ============================================================
-# 53. FINAL BUSINESS INSIGHT SUMMARY
+# 43. FINAL MODEL SUMMARY
 # ============================================================
 
-festival_non = (
-    df.loc[
-        df["is_festival_week"] == "N",
-        "stockout_risk"
-    ]
-    .eq("Imminent")
-    .mean() * 100
-)
+print("\n============================================================")
+print("FINAL MODEL SUMMARY")
+print("============================================================")
 
-festival_yes = (
-    df.loc[
-        df["is_festival_week"] == "Y",
-        "stockout_risk"
-    ]
-    .eq("Imminent")
-    .mean() * 100
-)
+for _, row in results_display.iterrows():
 
-perishable_no = (
-    df.loc[
-        df["is_perishable"] == "N",
-        "stockout_risk"
-    ]
-    .eq("Imminent")
-    .mean() * 100
-)
+    print(
+        f"\n{row['Model']}"
+    )
 
-perishable_yes = (
-    df.loc[
-        df["is_perishable"] == "Y",
-        "stockout_risk"
-    ]
-    .eq("Imminent")
-    .mean() * 100
-)
+    print(
+        f"Accuracy: "
+        f"{row['Accuracy']:.2f}%"
+    )
 
-print("\n" + "=" * 70)
-print("KEY BUSINESS FINDINGS")
-print("=" * 70)
+    print(
+        f"Macro F1: "
+        f"{row['Macro F1']:.2f}%"
+    )
 
-print(
-    f"""
-Festival:
-    Non-festival Imminent rate : {festival_non:.2f}%
-    Festival Imminent rate     : {festival_yes:.2f}%
+    print(
+        f"Imminent Recall: "
+        f"{row['Imminent Recall']:.2f}%"
+    )
 
-Perishability:
-    Non-perishable rate        : {perishable_no:.2f}%
-    Perishable rate            : {perishable_yes:.2f}%
-
-Risk-group averages:
-
-{risk_group_analysis.round(2).to_string()}
-"""
-)
+    print(
+        f"Imminent Precision: "
+        f"{row['Imminent Precision']:.2f}%"
+    )
 
 
 # ============================================================
-# 54. SAVE IMPORTANT OUTPUTS
+# 44. FINAL PROJECT CONCLUSION
 # ============================================================
 
-print("\n" + "=" * 70)
-print("SAVING OUTPUTS")
-print("=" * 70)
+print("""
+============================================================
+PROJECT CONCLUSION
+============================================================
 
-final_results.to_csv(
-    "final_model_results.csv",
+This project developed a supervised multi-class classification
+system for predicting daily stockout risk for SKU-store
+combinations.
+
+The workflow included:
+
+1. Loading five relational tables.
+2. Validating the expected row counts.
+3. Cleaning data-quality issues.
+4. Joining the tables.
+5. Engineering inventory and demand features.
+6. Checking for potential data leakage.
+7. Using a time-based train/test split.
+8. Training a majority baseline.
+9. Training Multinomial Logistic Regression.
+10. Training Random Forest.
+11. Evaluating Accuracy, Macro F1 and Imminent Recall.
+12. Interpreting feature importance and model coefficients.
+13. Performing business-level stockout risk analysis.
+
+The key business objective was to identify Imminent stockout
+situations early enough to support proactive inventory decisions.
+
+The most important lesson from this project was that model
+performance depends not only on the algorithm, but also on
+correct data preparation, feature engineering, temporal
+validation and leakage prevention.
+""")
+
+
+# ============================================================
+# 45. OPTIONAL: SAVE RESULTS
+# ============================================================
+
+results_display.to_csv(
+    "model_comparison_results.csv",
     index=False
 )
 
-rf_importance.to_csv(
+
+feature_importance_df.to_csv(
     "random_forest_feature_importance.csv",
     index=False
 )
 
-category_analysis.to_csv(
-    "category_stockout_analysis.csv"
+
+risk_group_means.to_csv(
+    "risk_group_feature_means.csv"
 )
 
-store_analysis.to_csv(
-    "store_stockout_analysis.csv"
-)
-
-risk_group_analysis.to_csv(
-    "risk_group_feature_analysis.csv"
-)
-
-reliability_analysis.to_csv(
-    "supplier_reliability_analysis.csv"
-)
-
-festival_analysis.to_csv(
-    "festival_analysis.csv"
-)
-
-perishable_analysis.to_csv(
-    "perishable_analysis.csv"
-)
-
-print("✓ final_model_results.csv")
-print("✓ random_forest_feature_importance.csv")
-print("✓ category_stockout_analysis.csv")
-print("✓ store_stockout_analysis.csv")
-print("✓ risk_group_feature_analysis.csv")
-print("✓ supplier_reliability_analysis.csv")
-print("✓ festival_analysis.csv")
-print("✓ perishable_analysis.csv")
-
-
-# ============================================================
-# 55. END
-# ============================================================
-
-print("\n" + "=" * 70)
-print("QUICKCART PROJECT COMPLETE")
-print("=" * 70)
 
 print(
-    """
-The complete workflow has been executed:
-
-✓ Data loading
-✓ Data validation
-✓ Data quality checks
-✓ Five-table joins
-✓ Feature engineering
-✓ Business EDA
-✓ Time-based train/test split
-✓ Majority baseline
-✓ Logistic Regression
-✓ Random Forest
-✓ Model comparison
-✓ Classification reports
-✓ Confusion matrices
-✓ Imminent-class evaluation
-✓ Random Forest feature importance
-✓ Logistic Regression coefficients
-✓ Business insights
-✓ Output files
-"""
+    "\nResults saved successfully."
 )
+
+# ============================================================
+# END OF PROJECT
+# ============================================================
